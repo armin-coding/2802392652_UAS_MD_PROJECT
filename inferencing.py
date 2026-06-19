@@ -1,5 +1,5 @@
 import re
-import pickle
+import joblib
 import numpy as np
 import pandas as pd
 
@@ -10,10 +10,8 @@ class ModelInference:
     
     def __init__(self, model_path='models/best_model.pkl', preprocessor_path='models/preprocessor.pkl'):
         try:
-            with open(model_path, 'rb') as f:
-                self.model = pickle.load(f)
-            with open(preprocessor_path, 'rb') as f:
-                self.preprocessor = pickle.load(f)
+            self.model = joblib.load(model_path)
+            self.preprocessor = joblib.load(preprocessor_path)
             print("[INFO] Model dan Preprocessor berhasil dimuat.")
         except FileNotFoundError as e:
             print(f"[ERROR] Artefak tidak ditemukan. Pastikan pipeline.py sudah dijalankan: {e}")
@@ -27,7 +25,12 @@ class ModelInference:
 
         target_drops = [
             'unnamed: 0', 'id', 'customer_id', 'name', 
-            'ssn', 'month', 'type_of_loan', 'backlogs'
+            'ssn', 'month', 'type_of_loan', 'backlogs',
+            'total_emi_per_month', 'monthly_inhand_salary', 
+            'credit_utilization_ratio', 'payment_of_min_amount', 
+            'num_credit_card', 'num_credit_inquiries', 
+            'delay_from_due_date', 'monthly_balance', 
+            'interest_rate', 'num_bank_accounts'
         ]
         for col in df.columns:
             if col.lower() in target_drops:
