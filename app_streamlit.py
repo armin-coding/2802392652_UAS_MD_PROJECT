@@ -1,120 +1,97 @@
-import re
-import joblib
-import numpy as np
+import streamlit as st
 import pandas as pd
+from inferencing import ModelInference
 
-class ModelInference:
+
+
+
+# INISIALISASI BACKEND (INFERENCING) YANG BAKAL LOAD BESTMODEL DAN PREPROCESSING
+# file best_model.pkl dan preprocessor.pkl hrs udah ada di folder models/
+
+inference_system = ModelInference()
+
+
+
+
+st.set_page_config(page_title="Credit Scoring System", layout="centered")
+st.title("AI Credit Scoring Deployment")
+st.write("Aplikasi ini digunakan untuk menilai performa dan kelas kredit nasabah secara real-time.")
+st.markdown("-")
+
+st.subheader("Form Data Nasabah Baru")
+
+
+
+# form input UI kita
+col1, col2 = st.columns(2)
+
+with col1:
+    age = st.number_input("Usia Nasabah (Age)", min_value=18, max_value=100, value=30, step=1)
+    annual_income = st.number_input("Pendapatan Tahunan (Annual Income dalam USD)", min_value=0.0, value=50000.0, step=500.0)
+    num_of_loan = st.number_input("Jumlah Pinjaman Aktif (Num of Loan)", min_value=0, max_value=20, value=2, step=1)
+    num_of_delayed = st.number_input("Jumlah Pembayaran Terlambat (Num of Delayed Payment)", min_value=0, max_value=50, value=1, step=1)
+    changed_limit = st.number_input("Perubahan Batas Kredit (Changed Credit Limit)", min_value=0.0, value=10.0, step=0.5)
+
+with col2:
+    outstanding_debt = st.number_input("Sisa Hutang (Outstanding Debt dalam USD)", min_value=0.0, value=1000.0, step=100.0)
+    amount_invested = st.number_input("Investasi Bulanan (Amount Invested Monthly)", min_value=0.0, value=200.0, step=10.0)
     
-    # load model dan preprocessor yg udah dilatih ama
-    # lakuin prediksi pada data baru
+    # input umur riwayat kredit (nanti diparsing oleh fungsi regex di inferencing.py)
+    credit_history_year = st.slider("Riwayat Kredit (Tahun)", min_value=0, max_value=50, value=5)
+    credit_history_month = st.slider("Riwayat Kredit (Bulan)", min_value=0, max_value=11, value=6)
+    credit_history_age_str = f"{credit_history_year} Years and {credit_history_month} Months"
     
-    def __init__(self, model_path='models/best_model.pkl', preprocessor_path='models/preprocessor.pkl'):
-        try:
-            self.model = joblib.load(model_path)
-            self.preprocessor = joblib.load(preprocessor_path)
-            print("[INFO] Model dan Preprocessor berhasil dimuat.")
-        except FileNotFoundError as e:
-            print(f"[ERROR] Artefak tidak ditemukan. Pastikan pipeline.py sudah dijalankan: {e}")
+    # input Kategori
+    occupation = st.selectbox("Pekerjaan (Occupation)", [
+        "Scientist", "Teacher", "Engineer", "Entrepreneur", "Developer", 
+        "Lawyer", "Media_Manager", "Doctor", "Accountant", "Musician"
+    ])
+    credit_mix = st.selectbox("Bauran Kredit (Credit Mix)", ["Good", "Standard", "Bad"])
+    payment_behaviour = st.selectbox("Perilaku Pembayaran", [
+        "High_spent_Small_value_payments",
+        "Low_spent_Large_value_payments",
+        "Low_spent_Medium_value_payments",
+        "Low_spent_Small_value_payments",
+        "High_spent_Medium_value_payments",
+        "High_spent_Large_value_payments"
+    ])
 
-            
-
-    def _clean_inference_data(self, df: pd.DataFrame) -> pd.DataFrame:
-
-        df = df.copy()
-        
-
-        target_drops = [
-            'unnamed: 0', 'id', 'customer_id', 'name', 
-            'ssn', 'month', 'type_of_loan', 'backlogs',
-            'total_emi_per_month', 'monthly_inhand_salary', 
-            'credit_utilization_ratio', 'payment_of_min_amount', 
-            'num_credit_card', 'num_credit_inquiries', 
-            'delay_from_due_date', 'monthly_balance', 
-            'interest_rate', 'num_bank_accounts'
-        ]
-        for col in df.columns:
-            if col.lower() in target_drops:
-                df = df.drop(columns=[col])
-
-        # bersihin karakter non numerik
-        str_num_cols = [
-            'Age', 'Annual_Income', 'Num_of_Loan', 'Num_of_Delayed_Payment', 
-            'Changed_Credit_Limit', 'Outstanding_Debt', 'Amount_invested_monthly'
-        ]
-        for col in str_num_cols:
-            if col in df.columns:
-                df[col] = df[col].astype(str).str.replace(r'[^0-9.]', '', regex=True)
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-
-        #parsing durasi kredit
-        if 'Credit_History_Age' in df.columns:
-            def parse_credit_age(s):
-                if pd.isna(s): return np.nan
-                years = re.search(r'(\d+)\s+Year', str(s))
-                months = re.search(r'(\d+)\s+Month', str(s))
-                y = int(years.group(1)) if years else 0
-                m = int(months.group(1)) if months else 0
-                return y * 12 + m
-            df['Credit_History_Age'] = df['Credit_History_Age'].apply(parse_credit_age)
+st.markdown("---")
 
 
 
-        # imputasi untuk inferencing
-        num_cols = df.select_dtypes(include=['int64', 'float64']).columns
-        cat_cols = df.select_dtypes(include=['object', 'category']).columns
-        
-        for col in num_cols:
-            df[col] = df[col].fillna(0)
-        for col in cat_cols:
-            df[col] = df[col].fillna(df[col].mode()[0] if not df[col].mode().empty else 'Unknown')
-
-        return df
-
-
-
-
-
-    def predict(self, input_data: dict) -> str:
-        """
-        input dictionary yg dapet dari streamlit
-        membersihkan data, mentransformasikannya, dan mengembalikan hasil prediksi.
-        """
-        # DICTIONARY JADI DATAFRAME
-        df_input = pd.DataFrame([input_data])
-        
-        # bersihkan data
-        df_clean = self._clean_inference_data(df_input)
-        
-        # transformasi dgn menggunakan ColumnTransformer yang sudah di-fit
-        X_trans = self.preprocessor.transform(df_clean)
-        
-        # prediksi
-        prediction = self.model.predict(X_trans)
-        
-        return prediction[0]
-
-
-
-
-
-#pengujian lokal
-if __name__ == "__main__":
-    inference = ModelInference()
-    
-    # contoh data test case yang merepresentasikan nasabah
-    dummy_input = {
-        "Age": "28",
-        "Annual_Income": "34000.50",
-        "Num_of_Loan": "2",
-        "Num_of_Delayed_Payment": "1",
-        "Changed_Credit_Limit": "5.5",
-        "Outstanding_Debt": "120.00",
-        "Amount_invested_monthly": "50.00",
-        "Credit_History_Age": "5 Years and 2 Months",
-        "Occupation": "Engineer",
-        "Credit_Mix": "Good",
-        "Payment_Behaviour": "High_spent_Medium_value_payments"
+# proses prediksi saat tombol diklik
+if st.button("Evaluasi Skor Kredit", type="primary"):
+    # Menyusun dictionary input yang strukturnya sama dengan dummy_input di inferencing.py
+    input_data = {
+        "Age": age,
+        "Annual_Income": annual_income,
+        "Num_of_Loan": num_of_loan,
+        "Num_of_Delayed_Payment": num_of_delayed,
+        "Changed_Credit_Limit": changed_limit,
+        "Outstanding_Debt": outstanding_debt,
+        "Amount_invested_monthly": amount_invested,
+        "Credit_History_Age": credit_history_age_str,
+        "Occupation": occupation,
+        "Credit_Mix": credit_mix,
+        "Payment_Behaviour": payment_behaviour
     }
     
-    hasil = inference.predict(dummy_input)
-    print(f"\n[HASIL] Prediksi Kelas Credit Score: {hasil}")
+    with st.spinner("Mengevaluasi data nasabah..."):
+        try:
+            # memanggil fungsi predict dari inferencing.py
+            hasil_prediksi = inference_system.predict(input_data)
+            
+            # menampilkan hasil dengan warna indikator
+            st.success("### Proses Evaluasi Selesai!")
+            
+            if str(hasil_prediksi).lower() == 'good':
+                st.balloons()
+                st.markdown(f"Hasil Penilaian Skor Kredit: **{hasil_prediksi.upper()}** (Performa Sangat Baik)")
+            elif str(hasil_prediksi).lower() == 'standard':
+                st.markdown(f"Hasil Penilaian Skor Kredit: **{hasil_prediksi.upper()}** (Performa Cukup/Normal)")
+            else:
+                st.markdown(f"Hasil Penilaian Skor Kredit: **{hasil_prediksi.upper()}** (Performa Berisiko Tinggi)")
+                
+        except Exception as e:
+            st.error(f"Terjadi kesalahan saat memproses prediksi: {e}")
